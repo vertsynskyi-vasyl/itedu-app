@@ -1,0 +1,71 @@
+#cloud-config
+repo_update: true
+repo_upgrade: all
+packages:
+  - nginx
+  - php
+  - php-cli
+  - php-mysql
+  - php-gd
+  - php-xml
+  - php-fpm
+  - nfs-common
+
+write_files:
+  - content: |
+      server {
+               listen       80;
+               server_name  wp.itedu.work.gd;
+               root         /var/www/wp.itedu.work.gd;
+
+               access_log /var/log/nginx/wp.itedu.work.gd-access.log;
+               error_log  /var/log/nginx/wp.itedu.work.gd-error.log error;
+               index index.html index.htm index.php;
+
+               location / {
+                            try_files $uri $uri/ /index.php$is_args$args;
+               }
+
+               location ~ \.php$ {
+                  fastcgi_split_path_info ^(.+\.php)(/.+)$;
+                  fastcgi_pass unix:/var/run/php8.3-fpm-wordpress-site.sock;
+                  fastcgi_index index.php;
+                  include fastcgi.conf;
+          }
+      }
+    owner: root:root
+    path: /etc/nginx/sites-available/wp.itedu.work.gd
+    permissions: '0644'
+  - content: |
+      [wordpress_site]
+      user = wordpress_user
+      group = wordpress_user
+      listen = /var/run/php8.3-fpm-wordpress-site.sock
+      listen.owner = www-data
+      listen.group = www-data
+      php_admin_value[disable_functions] = exec,passthru,shell_exec,system
+      php_admin_flag[allow_url_fopen] = off
+      ; Choose how the process manager will control the number of child processes.
+      pm = dynamic
+      pm.max_children = 75
+      pm.start_servers = 10
+      pm.min_spare_servers = 5
+      pm.max_spare_servers = 20
+      pm.process_idle_timeout = 10s
+    owner: root:root
+    path: /etc/php/8.3/fpm/pool.d/wordpress_pool.conf
+    permissions: '0644'
+
+mounts:
+  - [ fs-05e8fe8123ddf70ba.efs.eu-central-1.amazonaws.com:/, /var/www/wp.itedu.work.gd, nfs4, "nofail,nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport", "0", "0"]
+
+runcmd:
+  - [ sh, -c, "ln -s /etc/nginx/sites-available/wp.itedu.work.gd /etc/nginx/sites-enabled/" ]
+  - groupadd wordpress_user
+  - useradd -g wordpress_user wordpress_user
+  - systemctl restart php8.3-fpm
+  - systemctl disable --now apache2
+  - mkdir -p /var/www/wp.itedu.work.gd
+  - [ sh, -c, 'echo "<?php phpinfo(); ?>" > /var/www/wp.itedu.work.gd/info.php' ]
+  - mount /var/www/wp.itedu.work.gd
+  - systemctl restart nginx
